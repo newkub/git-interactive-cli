@@ -3,11 +3,10 @@ import pc from 'picocolors';
 import { execa } from 'execa';
 import { defaultConfig } from '../../git-interactive.config';
 import { staging } from './stage';
-import type { CommitAnswers } from '../types/defineConfig';
 
 async function commitHandler(): Promise<void> {
   const config = defaultConfig.commit;
-  intro(pc.bold('🤖 AI Commit Assistant'));
+  intro(pc.bold('🤖 Commit Assistant'));
 
   try {
     const status = await staging();
@@ -39,15 +38,8 @@ async function commitHandler(): Promise<void> {
       const spin = spinner();
       spin.start('Generating AI commit message...');
       
-      const answers: CommitAnswers = {
-        type: config.message.type[0].value,
-        scope: '',
-        description: '',
-        emoji: config.message.emoji.enabled ? config.message.type[0].label.split(' ')[0] : '',
-        bulletPoints: []
-      };
-      
-      const commitMessage = formatCommitMessage(answers);
+      // Placeholder for AI commit message generation
+      const commitMessage = "feat: implement AI-assisted commit message";
       spin.stop();
 
       try {
