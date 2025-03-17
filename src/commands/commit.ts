@@ -1,218 +1,173 @@
-import { intro, select, text, confirm, isCancel, outro, multiselect, spinner } from '@clack/prompts';
+import { intro, outro, select, spinner, text, confirm, isCancel, log } from '@clack/prompts';
 import pc from 'picocolors';
 import { execa } from 'execa';
-import { generateCommitMessage } from '../utils/git';
-import type { GitAssistanceConfig } from '../types/defineConfig';
-import config from '../../git-interactive.config';
+import { defaultConfig } from '../../git-interactive.config';
+import { staging } from './stage';
+import type { CommitAnswers } from '../types/defineConfig';
 
-const getStageOptions = (config: GitAssistanceConfig) => {
-  const options = [];
+async function commitHandler(): Promise<void> {
+  const config = defaultConfig.commit;
+  intro(pc.bold('🤖 AI Commit Assistant'));
 
-  if (config.stageOptions.enableStageAll) {
-    options.push({ value: 'all', label: 'Stage all changes' });
-  }
-  if (config.stageOptions.enableStageByFolder) {
-    options.push({ value: 'folder', label: 'Stage by folder' });
-  }
-  if (config.stageOptions.enableStageRelevant) {
-    options.push({ value: 'relevant', label: 'Stage relevant files (AI)' });
-  }
-  if (config.stageOptions.enableStageManual) {
-    options.push({ value: 'manual', label: 'Stage manually' });
-  }
-
-  return options;
-};
-
-const handleStageSelection = async (selection: string) => {
-  switch (selection) {
-    case 'all': {
-      await execa('git', ['add', '.']);
-      break;
-    }
-    case 'folder': {
-      const folder = await select({
-        message: 'Select folder to stage',
-        options: await getFolderOptions()
-      });
-      if (!isCancel(folder)) {
-        await execa('git', ['add', folder as string]);
-      }
-      break;
-    }
-    case 'relevant': {
-      // AI-based staging logic
-      break;
-    }
-    case 'manual': {
-      const { stdout: changedFiles } = await execa('git', ['status', '--porcelain']);
-      const files = changedFiles.trim().split('\n').map(fileStatus => ({
-        value: fileStatus.substring(3),
-        label: fileStatus.substring(3),
-        hint: fileStatus.substring(0, 2).trim()
-      }));
-
-      const selectedFiles = await multiselect({
-        message: 'Select files to stage',
-        options: files,
-        required: false
-      });
-
-      if (!isCancel(selectedFiles)) {
-        await execa('git', ['add', ...(selectedFiles as string[])]);
-      }
-      break;
-    }
-  }
-};
-
-const getFolderOptions = async (): Promise<{ value: string; label: string }[]> => {
-  const { stdout: folders } = await execa('git', ['ls-files', '--others', '--directory']);
-  return folders.trim().split('\n').map(folder => ({ value: folder, label: folder }));
-};
-
-export async function commit(_config?: GitAssistanceConfig): Promise<void> {
-  intro(pc.bgBlue(' Git AI Commit '));
-  
   try {
-    // Check for staged files
-    const { stdout: stagedFiles } = await execa('git', ['diff', '--name-only', '--staged']);
-    
-    if (!stagedFiles.trim()) {
-      // แสดงรายการไฟล์ที่เปลี่ยนแปลง
-      const changedFiles = await execa('git', ['status', '--porcelain']);
-      if (changedFiles.stdout.trim()) {
-        console.log('Changed files:');
-        for (const fileStatus of changedFiles.stdout.trim().split('\n')) {
-          const status = fileStatus.substring(0, 2).trim();
-          const filePath = fileStatus.substring(3);
-          let statusText = '';
-          let color = pc.white;
+    const status = await staging();
+    if (status.files.length === 0) {
+      log.warning('No files staged for commit.');
+      return;
+    }
 
-          switch (status) {
-            case 'M':
-              statusText = '(Modified)';
-              color = pc.green;
-              break;
-            case 'A':
-              statusText = '(Added)';
-              color = pc.green;
-              break;
-            case 'D':
-              statusText = '(Deleted)';
-              color = pc.red;
-              break;
-            default:
-              statusText = `(${status})`;
-          }
-
-          console.log(color(`${statusText} ${filePath}`));
-        }
+    // Select mode if enabled
+    let mode = config.mode;
+    if (config.askMode) {
+      const commitMode = await select({
+        message: 'Select commit mode:',
+        options: [
+          { value: 'aicommit', label: 'AI Commit' },
+          { value: 'manual', label: 'Manual Commit' }
+        ],
+        initialValue: config.mode
+      });
+      if (isCancel(commitMode)) {
+        outro(pc.yellow('Commit cancelled.'));
+        return;
       }
+      mode = commitMode;
+    }
 
-      const stageOptions = getStageOptions(config);
-      const stageSelection = await select({
-        message: 'Select staging option:',
-        options: stageOptions
+    if (mode === 'aicommit') {
+      // Generate commit message using AI
+      const spin = spinner();
+      spin.start('Generating AI commit message...');
+      
+      const answers: CommitAnswers = {
+        type: config.message.type[0].value,
+        scope: '',
+        description: '',
+        emoji: config.message.emoji.enabled ? config.message.type[0].label.split(' ')[0] : '',
+        bulletPoints: []
+      };
+      
+      const commitMessage = formatCommitMessage(answers);
+      spin.stop();
+
+      try {
+        await execa('git', ['commit', '-m', commitMessage]);
+        log.success('Commit created successfully!');
+      } catch (error) {
+        log.error('Failed to create commit:', error);
+      }
+    } else {
+      // Manual commit logic
+      const commitType = await select({
+        message: 'Select commit type:',
+        options: config.message.type.map(type => ({
+          value: type.value,
+          label: type.label
+        }))
       });
       
-      if (isCancel(stageSelection)) {
-        outro('Operation cancelled');
+      if (isCancel(commitType)) {
+        outro(pc.yellow('Commit cancelled.'));
         return;
       }
       
-      await handleStageSelection(stageSelection);
-      console.log(pc.green('✓ Changes staged'));
-    }
-    
-    const commitType = config.commit.askType ? await select({
-      message: 'Select commit type:',
-      options: config.commit.message.type.options.map(option => ({
-        value: option.value,
-        label: `${option.value.charAt(0).toUpperCase() + option.value.slice(1)}: ${option.description}`,
-      })),
-    }) : 'feat';
-    
-    if (isCancel(commitType)) {
-      outro('Operation cancelled');
-      return;
-    }
-    
-    const commitScope = config.commit.askScope ? await select({
-      message: 'Select scope:',
-      options: config.commit.message.scope.map(s => ({ value: s, label: s }))
-    }) : '';
-    
-    if (isCancel(commitScope)) {
-      outro('Operation cancelled');
-      return;
-    }
-    
-    const commitDescription = await text({
-      message: 'Enter commit description:',
-      placeholder: 'Brief description of the changes',
-      validate: (value) => {
-        if (config.commit.message.description.required && !value.trim()) return 'Description is required';
-        if (value.length > config.commit.message.description.maxLength) return `Description is too long (max ${config.commit.message.description.maxLength} characters)`;
-        return;
-      },
-    });
-    
-    if (isCancel(commitDescription)) {
-      outro('Operation cancelled');
-      return;
-    }
-    
-    const commitMessage = generateCommitMessage(
-      {
-        emoji: { enabled: true }, translate: { enabled: false },
-        bulletPoints: {
-          enabled: false,
-          maxItems: 0
+      let scope = '';
+      if (config.askScope) {
+        scope = await text({
+          message: 'Enter scope (optional):',
+          placeholder: 'e.g. auth, ui'
+        });
+        
+        if (isCancel(scope)) {
+          outro(pc.yellow('Commit cancelled.'));
+          return;
         }
-      },
-      {
-        type: commitType as string,
-        scope: commitScope as string,
-        description: commitDescription as string,
-        emoji: '✨',
-        bulletPoints: []
       }
-    );
-    
-    const shouldCommit = await confirm({
-      message: `Commit with message: "${commitMessage}"?`,
-      initialValue: true,
-    });
-    
-    if (isCancel(shouldCommit) || !shouldCommit) {
-      outro('Operation cancelled');
-      return;
+      
+      const description = await text({
+        message: 'Enter commit description:',
+        placeholder: 'Brief description of changes',
+        validate: (value) => {
+          if (!value && config.message.description.required) {
+            return 'Description is required';
+          }
+          if (value.length > config.message.description.maxLength) {
+            return `Description must be less than ${config.message.description.maxLength} characters`;
+          }
+        }
+      });
+      
+      if (isCancel(description)) {
+        outro(pc.yellow('Commit cancelled.'));
+        return;
+      }
+      
+      const typeObj = config.message.type.find(t => t.value === commitType);
+      const emoji = config.message.emoji.enabled && typeObj 
+        ? typeObj.label.split(' ')[0] 
+        : '';
+      
+      const answers: CommitAnswers = {
+        type: commitType,
+        scope: scope,
+        description: description,
+        emoji,
+        bulletPoints: []
+      };
+      
+      const commitMessage = formatCommitMessage(answers);
+      
+      if (config.askConfirm) {
+        const shouldCommit = await confirm({
+          message: `Commit with message: "${commitMessage}"?`
+        });
+        
+        if (isCancel(shouldCommit) || !shouldCommit) {
+          outro(pc.yellow('Commit cancelled.'));
+          return;
+        }
+      }
+      
+      try {
+        await execa('git', ['commit', '-m', commitMessage]);
+        outro(pc.green('✅ Changes committed successfully!'));
+        
+        if (config.askPush) {
+          const shouldPush = await confirm({
+            message: 'Push changes to remote?'
+          });
+          
+          if (!isCancel(shouldPush) && shouldPush) {
+            const spin = spinner();
+            spin.start('Pushing changes...');
+            try {
+              await execa('git', ['push']);
+              spin.stop();
+            } catch (error) {
+              spin.stop();
+              outro(pc.red(`Error pushing changes: ${error}`));
+            }
+          }
+        }
+      } catch (error) {
+        outro(pc.red(`Error committing changes: ${error}`));
+      }
     }
-    
-    await execa('git', ['commit', '-m', commitMessage]);
-    console.log(pc.green('✓ Changes committed successfully'));
-    
-    const shouldPush = await confirm({
-      message: 'Push changes to remote?',
-      initialValue: config.commit.askPush,
-    });
-    
-    if (isCancel(shouldPush)) {
-      outro('Push cancelled');
-      return;
-    }
-    
-    if (shouldPush) {
-      await execa('git', ['push']);
-      console.log(pc.green('✓ Changes pushed to remote'));
-    }
-    
-    outro('All done! 🎉');
   } catch (error) {
-    console.error(pc.red('An error occurred:'), error);
-    outro(pc.red('Failed to complete the operation'));
+    outro(pc.red(`Error staging files: ${error}`));
   }
 }
 
-export default commit;
+function formatCommitMessage(answers: CommitAnswers): string {
+  const { type, scope, description, emoji } = answers;
+  
+  let message = `${type}${scope ? `(${scope})` : ''}: ${description}`;
+
+  if (emoji) {
+    message += ` ${emoji}`;
+  }
+
+  return message;
+}
+
+export default commitHandler;

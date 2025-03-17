@@ -1,35 +1,48 @@
 type ModelType = 'deepseek' | 'gpt-4o' | 'claude-3.7-sonnet';
 type VersioningType = 'semantic' | 'calendar' | 'other';
-type TranslateType = 'english' | 'mandarin' | 'hindi' | 'spanish' | 'french' | 'arabic' | 'bengali' | 'russian' | 'portuguese' | 'indonesian' | 'urdu' | 'german' | 'japanese' | 'swahili' | 'marathi' | 'telugu' | 'turkish' | 'tamil' | 'vietnamese' | 'thai';
+type Language = 'english' | 'mandarin' | 'hindi' | 'spanish' | 'french' | 'arabic' | 'bengali' | 'russian' | 'portuguese' | 'indonesian' | 'urdu' | 'german' | 'japanese' | 'swahili' | 'marathi' | 'telugu' | 'turkish' | 'tamil' | 'vietnamese' | 'thai';
 
-export type AIConfig = {
+type CommitMode = 'aicommit' | 'manual';
+
+interface CommitTypeOption {
+  value: string;
+  label: string;
+  description: string;
+}
+
+interface AIConfig {
   useModel: ModelType;
   deepseek: string;
   'gpt-4o': string;
   'claude-3.7-sonnet': string;
-};
+}
 
-interface CommitTypeOption {
-  value: string;
+interface CommitAnswers {
+  type: string;
+  scope?: string;
   description: string;
+  bulletPoints?: string[];
+  emoji?: string;
 }
 
 interface CommitMessageConfig {
-  scope: string[];
-  type: {
-    options: CommitTypeOption[];
+  emoji: {
+    enabled: boolean;
   };
+  instructions: string;
+  scope: string[];
+  type: CommitTypeOption[];
   description: {
     required: boolean;
     maxLength: number;
     format?: 'long' | 'bullet';
   };
-  translate: TranslateType;
-  instructions?: string;
+  bulletPoints: boolean;
+  language: Language;
 }
 
 interface CommitConfig {
-  mode: 'aicommit' | 'manual';
+  mode: CommitMode;
   askMode: boolean;
   askType: boolean;
   askScope: boolean;
@@ -50,7 +63,7 @@ interface ReleaseConfig {
   publish: string;
 }
 
-export interface GitAssistanceConfig {
+interface GitAssistanceConfig {
   ai: AIConfig;
   commit: CommitConfig;
   commitMessage?: {
@@ -69,7 +82,7 @@ export interface GitAssistanceConfig {
   };
 }
 
-export const defaultConfig: GitAssistanceConfig = {
+const defaultConfig: GitAssistanceConfig = {
   ai: {
     useModel: 'deepseek',
     deepseek: '',
@@ -79,22 +92,31 @@ export const defaultConfig: GitAssistanceConfig = {
   commit: {
     mode: 'aicommit',
     askMode: true,
-    askType: false,
-    askScope: false,
+    askType: true,
+    askScope: true,
     askStage: true,
-    askConfirm: false,
-    askPush: false,
+    askConfirm: true,
+    askPush: true,
     message: {
-      scope: [],
-      type: {
-        options: [],
+      emoji: {
+        enabled: true
       },
+      instructions: 'Explain the changes you made in this commit. Be specific and concise.',
+      scope: ['ui', 'backend', 'database', 'infrastructure', 'other'],
+      type: [],
       description: {
         required: true,
         maxLength: 100,
       },
-      translate: 'english'
+      bulletPoints: true,
+      language: 'english'
     }
+  },
+  commitMessage: {
+    emoji: true,
+    scope: true,
+    type: true,
+    bulletPoints: true
   },
   hooks: {
     preCommit: 'npm run lint',
@@ -113,6 +135,25 @@ export const defaultConfig: GitAssistanceConfig = {
   }
 };
 
-export function defineConfig(config: GitAssistanceConfig): GitAssistanceConfig {
+function defineConfig(config: GitAssistanceConfig): GitAssistanceConfig {
   return config;
 }
+
+export type {
+  ModelType,
+  VersioningType,
+  Language,
+  CommitMode,
+  CommitTypeOption,
+  AIConfig,
+  CommitAnswers,
+  CommitMessageConfig,
+  CommitConfig,
+  HooksConfig,
+  ReleaseConfig,
+  GitAssistanceConfig
+};
+export {
+  defaultConfig,
+  defineConfig
+};

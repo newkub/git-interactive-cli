@@ -23,8 +23,10 @@ async function configHandler(_config?: GitAssistanceConfig): Promise<void> {
       return match ? match[1] : null;
     }).filter(Boolean))];
     
-    console.log(pc.green(`Configuration file paths:`));
-    configFiles.forEach(path => console.log(pc.green(` - ${path}`)));
+    console.log(pc.green("Configuration file paths:"));
+    for (const path of configFiles) {
+      console.log(pc.green(` - ${path}`));
+    }
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Unknown error';
     console.error(pc.red(`Error reading git config: ${message}`));

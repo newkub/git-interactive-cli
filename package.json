@@ -9,8 +9,8 @@
     "git-ai-assistance": "./dist/index.js"
   },
   "scripts": {
-    "start": "bun run src/index.ts",
-    "build": "bun build src/index.ts --outdir dist",
+    "start": "bun build src/index.ts --target=bun --outfile=dist/index.js && bun run dist/index.js",
+    "build": "bun build --target=bun --outfile=dist/index.js ./src/index.ts",
     "dev": "bun run dev src/index.ts --watch --noEmit",
     "biome": "biome check .",
     "biome:fix": "biome check --apply .",

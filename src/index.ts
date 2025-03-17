@@ -1,7 +1,7 @@
 import pc from 'picocolors';
 import { promisify } from 'util';
 import { exec as execCallback } from 'child_process';
-import nodeFzf from 'node-fzf';
+import { select, intro, outro } from '@clack/prompts';
 import commitHandler from './commands/commit';
 import logHandler from './commands/log';
 import releaseHandler from './commands/release';
@@ -45,10 +45,16 @@ export const runCommand = async (command: string): Promise<string> => {
  */
 async function main(): Promise<void> {
   try {
-    console.log(`\n${pc.magenta('🚀')} ${pc.bold(pc.cyan('Git Assistance'))} ${pc.magenta('✨')}`);
+    intro(`\n${pc.magenta('🚀')} ${pc.bold(pc.cyan('Git Assistance'))} ${pc.magenta('✨')}`);
     console.log(`${pc.dim(pc.italic('Ready to enhance your Git workflow with AI assistance'))}\n`);
 
     const commandHandlers: CommandHandler[] = [
+      { 
+        value: 'stage', 
+        label: '📦 Staging - Stage your changes',
+        handler: stageHandler,
+        hint: 'Stage your changes'
+      },
       { 
         value: 'commit', 
         label: '✨ Commit - Create a new commit with AI assistance',
@@ -121,35 +127,29 @@ async function main(): Promise<void> {
         handler: resetHandler,
         hint: 'Reset your branch'
       },
-      { 
-        value: 'staging', 
-        label: '📦 Staging - Stage your changes',
-        handler: stageHandler,
-        hint: 'Stage your changes'
-      }
+     
     ];
     
-    console.log(pc.cyan('Select a command (use arrow keys and Enter to select):'));
-    
-    const { selected } = await nodeFzf({
-      list: commandHandlers.map(c => c.label),
-      fzf: {
-        layout: 'reverse',
-        height: '50%',
-        border: 'rounded',
-      }
+    const selectedCommand = await select({
+      message: pc.cyan('Select a command:'),
+      options: commandHandlers.map(c => ({
+        value: c.value,
+        label: c.label,
+        hint: c.hint
+      }))
     });
     
-    if (!selected) {
-      console.log(pc.red('\nOperation cancelled'));
+    if (!selectedCommand) {
+      outro(pc.red('Operation cancelled'));
       process.exit(0);
     }
     
-    const selectedIndex = selected.index;
-    const selectedCommand = commandHandlers[selectedIndex];
-
-    console.log(pc.green(`\nExecuting: ${selectedCommand.label.split(' - ')[0]}`));
-    await selectedCommand.handler({} as GitAssistanceConfig);
+    const commandToExecute = commandHandlers.find(c => c.value === selectedCommand);
+    
+    if (commandToExecute) {
+      console.log(pc.green(`\nExecuting: ${commandToExecute.label.split(' - ')[0]}`));
+      await commandToExecute.handler({} as GitAssistanceConfig);
+    }
   } catch (error) {
     console.error(pc.red('Failed to initialize:'), error);
     process.exit(1);
